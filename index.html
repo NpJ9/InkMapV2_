@@ -1170,6 +1170,64 @@
         background: var(--card-border);
         border-radius: 4px;
       }
+
+      /* ── MOBILE / TOUCH ─────────────────────────────────────────── */
+      @media (max-width: 640px) {
+        #toolbar {
+          bottom: 16px;
+          padding: 6px 8px;
+          gap: 2px;
+          max-width: calc(100vw - 24px);
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+          border-radius: 10px;
+          flex-wrap: nowrap;
+        }
+        #toolbar::-webkit-scrollbar { display: none; }
+        .tb-btn {
+          height: 42px;
+          padding: 0 10px;
+          font-size: 11px;
+          flex-shrink: 0;
+        }
+        .tb-sep { flex-shrink: 0; }
+        #auth-box {
+          width: calc(100vw - 32px);
+          max-width: 420px;
+          padding: 32px 20px;
+          border-radius: 16px;
+        }
+        #hint { display: none; }
+        #board-name-display {
+          font-size: 22px;
+          top: 14px;
+        }
+        .connect-handle {
+          width: 28px;
+          height: 28px;
+          right: -14px;
+          border-width: 3px;
+        }
+        .resize-handle {
+          width: 36px;
+          height: 36px;
+          opacity: 0.6;
+        }
+        .card:hover .resize-handle,
+        .card.selected .resize-handle { opacity: 1; }
+        .card-done-btn {
+          width: 1.4em;
+          height: 1.4em;
+        }
+        .card-btn {
+          width: 2em;
+          height: 2em;
+        }
+        .sidebar-title { font-size: 20px; }
+        .board-item { padding: 13px 20px; }
+        .palette-option { padding: 13px 15px; }
+      }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -1995,6 +2053,48 @@
           startDrag(e, card.id, el);
         });
 
+        // Touch drag (tap = select, drag = move)
+        header.addEventListener("touchstart", (e) => {
+          if (e.target.closest("button,[data-action]")) return;
+          if (e.target === titleEl && titleEl.getAttribute("contenteditable") === "true") return;
+          e.preventDefault();
+          e.stopPropagation();
+          const touch = e.touches[0];
+          const startX = touch.clientX, startY = touch.clientY;
+          let dragging = false;
+          const wp0 = s2w(startX, startY);
+          const ox = wp0.x - card.x, oy = wp0.y - card.y;
+          const onMove = (ev) => {
+            ev.preventDefault();
+            const t = ev.touches[0];
+            if (!dragging && Math.hypot(t.clientX - startX, t.clientY - startY) > 6) {
+              dragging = true;
+              snapshot();
+              el.style.zIndex = 100;
+            }
+            if (dragging) {
+              const p = s2w(t.clientX, t.clientY);
+              card.x = p.x - ox;
+              card.y = p.y - oy;
+              el.style.left = card.x + "px";
+              el.style.top = card.y + "px";
+              renderEdges();
+            }
+          };
+          const onEnd = () => {
+            window.removeEventListener("touchmove", onMove);
+            window.removeEventListener("touchend", onEnd);
+            if (dragging) {
+              el.style.zIndex = "";
+              save();
+            } else {
+              selectCard(card.id);
+            }
+          };
+          window.addEventListener("touchmove", onMove, { passive: false });
+          window.addEventListener("touchend", onEnd);
+        }, { passive: false });
+
         el.addEventListener("mousedown", (e) => {
           if (
             !e.target.closest(
@@ -2004,6 +2104,9 @@
             selectCard(card.id);
         });
 
+        // Prevent canvas from starting a pan when touching a card
+        el.addEventListener("touchstart", (e) => { e.stopPropagation(); }, { passive: true });
+
         // Edit title
         titleEl.addEventListener("dblclick", (e) => {
           e.stopPropagation();
@@ -2011,6 +2114,20 @@
           titleEl.classList.add("editing");
           titleEl.focus();
           selAll(titleEl);
+        });
+
+        // Double-tap to edit title on mobile
+        let titleLastTap = 0;
+        titleEl.addEventListener("touchend", (e) => {
+          const now = Date.now();
+          if (now - titleLastTap < 350) {
+            e.stopPropagation();
+            titleEl.setAttribute("contenteditable", "true");
+            titleEl.classList.add("editing");
+            titleEl.focus();
+            selAll(titleEl);
+          }
+          titleLastTap = now;
         });
         titleEl.addEventListener("blur", () => {
           titleEl.setAttribute("contenteditable", "false");
@@ -2043,6 +2160,7 @@
         noteEl.addEventListener("mousedown", (e) => e.stopPropagation());
         noteEl.addEventListener("click", (e) => e.stopPropagation());
         noteEl.addEventListener("keydown", (e) => e.stopPropagation());
+        noteEl.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
 
         // Done
         doneBtn.addEventListener("click", (e) => {
@@ -2100,6 +2218,13 @@
           startConnect(e, card.id);
         });
 
+        // Touch connect
+        handle.addEventListener("touchstart", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          startTouchConnect(e.touches[0], card.id);
+        }, { passive: false });
+
         // ── RESIZE ──────────────────────────────────────────────
         resizeHandle.addEventListener("mousedown", (e) => {
           e.stopPropagation();
@@ -2131,6 +2256,37 @@
           window.addEventListener("mousemove", onMove);
           window.addEventListener("mouseup", onUp);
         });
+
+        // Touch resize
+        resizeHandle.addEventListener("touchstart", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          snapshot();
+          const touch = e.touches[0];
+          const startWP = s2w(touch.clientX, touch.clientY);
+          const startW = card.w, startH = card.h;
+          el.classList.add("resizing");
+          selectCard(card.id);
+          const onMove = (ev) => {
+            ev.preventDefault();
+            const t = ev.touches[0];
+            const wp = s2w(t.clientX, t.clientY);
+            card.w = Math.round(Math.max(200, startW + (wp.x - startWP.x)));
+            card.h = Math.round(Math.max(120, startH + (wp.y - startWP.y)));
+            el.style.width = card.w + "px";
+            el.style.height = card.h + "px";
+            applyCardFonts(el, card.w);
+            renderEdges();
+          };
+          const onEnd = () => {
+            window.removeEventListener("touchmove", onMove);
+            window.removeEventListener("touchend", onEnd);
+            el.classList.remove("resizing");
+            save();
+          };
+          window.addEventListener("touchmove", onMove, { passive: false });
+          window.addEventListener("touchend", onEnd);
+        }, { passive: false });
 
         world.appendChild(el);
         return el;
@@ -2253,6 +2409,42 @@
         window.addEventListener("mouseup", onUp);
       }
 
+      function startTouchConnect(touch, fromId) {
+        previewEdge = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        previewEdge.setAttribute("class", "edge preview");
+        svgLayer.appendChild(previewEdge);
+        const onMove = (ev) => {
+          ev.preventDefault();
+          const t = ev.touches[0];
+          const from = getBoard()?.cards.find((c) => c.id === fromId);
+          if (!from) return;
+          const wp = s2w(t.clientX, t.clientY);
+          const fw = from.w || DEFAULT_W, fh = from.h || DEFAULT_H;
+          const fx = from.x + fw, fy = from.y + fh / 2;
+          const tx = wp.x, ty = wp.y, dx = Math.abs(tx - fx) * 0.5;
+          previewEdge.setAttribute("d", `M ${fx} ${fy} C ${fx + dx} ${fy}, ${tx - dx} ${ty}, ${tx} ${ty}`);
+        };
+        const onEnd = (ev) => {
+          window.removeEventListener("touchmove", onMove);
+          window.removeEventListener("touchend", onEnd);
+          previewEdge?.remove();
+          previewEdge = null;
+          const t = ev.changedTouches[0];
+          const toId = document.elementFromPoint(t.clientX, t.clientY)?.closest(".card")?.dataset.id;
+          if (toId && toId !== fromId) {
+            snapshot();
+            const b = getBoard();
+            if (!b.edges.find((ed) => (ed.from === fromId && ed.to === toId) || (ed.from === toId && ed.to === fromId))) {
+              b.edges.push({ from: fromId, to: toId });
+              save();
+              renderEdges();
+            }
+          }
+        };
+        window.addEventListener("touchmove", onMove, { passive: false });
+        window.addEventListener("touchend", onEnd);
+      }
+
       // ── DRAG ──────────────────────────────────────────────────────────────────────
       function startDrag(e, cardId, el) {
         e.preventDefault();
@@ -2329,6 +2521,79 @@
         },
         { passive: false },
       );
+
+      // ── TOUCH: PAN, PINCH-ZOOM & DOUBLE-TAP ─────────────────────────────────
+      let touchPanStart = null;
+      let touchPanMoved = false;
+      let pinchStart = null;
+      let canvasLastTap = 0;
+
+      canvas.addEventListener("touchstart", (e) => {
+        if (e.target.closest(".card,#sidebar,#toolbar")) return;
+        e.preventDefault();
+        touchPanMoved = false;
+        if (e.touches.length === 1) {
+          const t = e.touches[0];
+          touchPanStart = { tx: t.clientX - viewport.x, ty: t.clientY - viewport.y };
+          pinchStart = null;
+        } else if (e.touches.length === 2) {
+          touchPanStart = null;
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchStart = {
+            dist: Math.hypot(dx, dy),
+            scale: viewport.scale,
+            x: viewport.x, y: viewport.y,
+            mx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            my: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+          };
+        }
+      }, { passive: false });
+
+      canvas.addEventListener("touchmove", (e) => {
+        e.preventDefault();
+        touchPanMoved = true;
+        if (e.touches.length === 1 && touchPanStart) {
+          const t = e.touches[0];
+          viewport.x = t.clientX - touchPanStart.tx;
+          viewport.y = t.clientY - touchPanStart.ty;
+          setViewport();
+        } else if (e.touches.length === 2 && pinchStart) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const dist = Math.hypot(dx, dy);
+          const ns = Math.max(0.25, Math.min(2.8, pinchStart.scale * (dist / pinchStart.dist)));
+          viewport.x = pinchStart.mx - (pinchStart.mx - pinchStart.x) * (ns / pinchStart.scale);
+          viewport.y = pinchStart.my - (pinchStart.my - pinchStart.y) * (ns / pinchStart.scale);
+          viewport.scale = ns;
+          setViewport();
+        }
+      }, { passive: false });
+
+      canvas.addEventListener("touchend", (e) => {
+        if (e.touches.length === 0) {
+          if (!touchPanMoved && !e.target.closest(".card")) {
+            const now = Date.now();
+            const t = e.changedTouches[0];
+            if (now - canvasLastTap < 350) {
+              const p = s2w(t.clientX, t.clientY);
+              addCard(p.x - DEFAULT_W / 2, p.y - DEFAULT_H / 2);
+              canvasLastTap = 0;
+            } else {
+              canvasLastTap = now;
+              selectCard(null);
+              closePopup();
+            }
+          }
+          touchPanStart = null;
+          pinchStart = null;
+        } else if (e.touches.length === 1) {
+          pinchStart = null;
+          const t = e.touches[0];
+          touchPanStart = { tx: t.clientX - viewport.x, ty: t.clientY - viewport.y };
+          touchPanMoved = false;
+        }
+      });
 
       function selectCard(id) {
         world
