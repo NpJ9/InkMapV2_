@@ -1,0 +1,3044 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inkmap</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --canvas-bg: #f2ede3;
+        --card-bg: #fdfaf4;
+        --card-border: #c0b090;
+        --card-shadow: rgba(80, 60, 20, 0.14);
+        --card-glow: rgba(196, 80, 42, 0.2);
+        --ink: #1c1508;
+        --ink-mid: #4a3820;
+        --ink-faint: #9a8060;
+        --ink-edge: #7a6040;
+        --accent: #c4502a;
+        --done-bg: #b8f0cc;
+        --done-border: #22c55e;
+        --done-glow: rgba(34, 197, 94, 0.28);
+        --done-ink: #0d4020;
+        --font-title: "Lora", serif;
+        --font-ui: "DM Mono", monospace;
+        --toolbar-bg: #2c2416;
+        --toolbar-text: #f2ede3;
+        --sidebar-bg: #fdfaf4;
+        --divider: rgba(140, 115, 70, 0.3);
+        --dot-color: #b8a882;
+        --u-low-bg: #e8f8ee;
+        --u-low-bdr: #48996a;
+        --u-med-bg: #fef7dc;
+        --u-med-bdr: #d4920a;
+        --u-high-bg: #fef0e6;
+        --u-high-bdr: #c4502a;
+        --u-crit-bg: #fee4e4;
+        --u-crit-bdr: #9e1010;
+      }
+      html.dark {
+        --canvas-bg: #161209;
+        --card-bg: #211c12;
+        --card-border: #3a3020;
+        --card-shadow: rgba(0, 0, 0, 0.45);
+        --card-glow: rgba(220, 110, 50, 0.24);
+        --ink: #f0e4c8;
+        --ink-mid: #c8aa78;
+        --ink-faint: #6a5838;
+        --ink-edge: #7a6848;
+        --accent: #e07848;
+        --done-bg: #042010;
+        --done-border: #16a34a;
+        --done-glow: rgba(22, 163, 74, 0.32);
+        --done-ink: #6ee09a;
+        --toolbar-bg: #0c0a06;
+        --toolbar-text: #ede0c4;
+        --sidebar-bg: #1a150d;
+        --divider: rgba(80, 60, 20, 0.45);
+        --dot-color: #2a2218;
+        --u-low-bg: #0c2a18;
+        --u-low-bdr: #2a7a4a;
+        --u-med-bg: #221600;
+        --u-med-bdr: #a07008;
+        --u-high-bg: #221008;
+        --u-high-bdr: #a04020;
+        --u-crit-bg: #1e0808;
+        --u-crit-bdr: #800808;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--canvas-bg);
+        transition: background 0.35s;
+      }
+      #app {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+      }
+
+      #canvas {
+        position: absolute;
+        inset: 0;
+        background-color: var(--canvas-bg);
+        cursor: default;
+        user-select: none;
+        transition: background-color 0.35s;
+      }
+      #canvas::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background-image: radial-gradient(
+          circle,
+          var(--dot-color) 1.5px,
+          transparent 1.5px
+        );
+        background-size: 30px 30px;
+        opacity: 0.4;
+      }
+      #world {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform-origin: 0 0;
+      }
+
+      /* ── EDGES ─────────────────────────────────────────── */
+      #svg-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        overflow: visible;
+      }
+      .edge {
+        fill: none;
+        stroke: var(--ink-edge);
+        stroke-width: 3.5;
+        stroke-linecap: round;
+        opacity: 0.6;
+        pointer-events: stroke;
+        cursor: pointer;
+        filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.25));
+        transition:
+          opacity 0.15s,
+          stroke-width 0.15s;
+      }
+      .edge:hover {
+        opacity: 1;
+        stroke-width: 5.5;
+        filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
+      }
+      .edge.preview {
+        stroke-dasharray: 8 6;
+        opacity: 0.35;
+        filter: none;
+      }
+
+      /* ── CARDS ─────────────────────────────────────────── */
+      .card {
+        position: absolute;
+        /* width & height set inline via JS */
+        min-width: 200px;
+        min-height: 120px;
+        background: var(--card-bg);
+        border: 2.5px solid var(--card-border);
+        border-radius: 16px;
+        box-shadow: 0 4px 20px var(--card-shadow);
+        display: flex;
+        flex-direction: column;
+        cursor: grab;
+        transition:
+          box-shadow 0.2s,
+          border-color 0.2s,
+          background 0.25s,
+          transform 0.18s;
+        animation: cardIn 0.24s cubic-bezier(0.34, 1.45, 0.64, 1);
+        overflow: hidden;
+      }
+      @keyframes cardIn {
+        from {
+          opacity: 0;
+          transform: scale(0.86) translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+      .card:hover {
+        box-shadow:
+          0 8px 32px var(--card-shadow),
+          0 0 0 3px var(--card-glow),
+          0 0 22px var(--card-glow);
+        border-color: var(--accent);
+        transform: translateY(-2px);
+      }
+      .card:active {
+        cursor: grabbing;
+        transform: translateY(0) !important;
+      }
+      .card.selected {
+        border-color: var(--accent);
+        box-shadow:
+          0 6px 24px var(--card-shadow),
+          0 0 0 3px rgba(196, 80, 42, 0.28),
+          0 0 22px rgba(196, 80, 42, 0.14);
+      }
+      .card.resizing {
+        transition: none !important;
+        animation: none !important;
+      }
+
+      /* urgency full tint */
+      .card.u-low {
+        background: var(--u-low-bg) !important;
+        border-color: var(--u-low-bdr) !important;
+      }
+      .card.u-medium {
+        background: var(--u-med-bg) !important;
+        border-color: var(--u-med-bdr) !important;
+      }
+      .card.u-high {
+        background: var(--u-high-bg) !important;
+        border-color: var(--u-high-bdr) !important;
+      }
+      .card.u-critical {
+        background: var(--u-crit-bg) !important;
+        border-color: var(--u-crit-bdr) !important;
+      }
+      .card.u-low:hover,
+      .card.u-medium:hover,
+      .card.u-high:hover,
+      .card.u-critical:hover {
+        border-color: var(--accent) !important;
+      }
+      .card.u-low.selected,
+      .card.u-medium.selected,
+      .card.u-high.selected,
+      .card.u-critical.selected {
+        border-color: var(--accent) !important;
+      }
+
+      /* done */
+      .card.done {
+        background: var(--done-bg) !important;
+        border-color: var(--done-border) !important;
+      }
+      .card.done:hover {
+        box-shadow:
+          0 8px 32px var(--card-shadow),
+          0 0 0 3px var(--done-glow),
+          0 0 22px var(--done-glow);
+      }
+      .card.done .card-title {
+        text-decoration: line-through;
+        color: var(--done-ink);
+        opacity: 0.65;
+      }
+      .card.done .card-note {
+        color: var(--done-ink);
+        opacity: 0.55;
+      }
+      .card.done .card-header {
+        border-bottom-color: rgba(34, 197, 94, 0.2);
+      }
+      .card.done .card-done-btn {
+        background: #22c55e;
+        border-color: #22c55e;
+        color: #fff;
+      }
+
+      /* ── HEADER ─────────────────────────────────────────── */
+      .card-header {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 15px 13px 11px 18px;
+        border-bottom: 1px solid var(--divider);
+        cursor: grab;
+        border-radius: 16px 16px 0 0;
+        flex-shrink: 0;
+      }
+      .card-header:active {
+        cursor: grabbing;
+      }
+
+      .card-done-btn {
+        flex-shrink: 0;
+        width: 1.1em;
+        height: 1.1em;
+        border: 2px solid var(--ink-faint);
+        border-radius: 50%;
+        background: transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.18s;
+        color: transparent;
+        line-height: 1;
+        font-size: inherit;
+      }
+      .card-done-btn:hover {
+        border-color: #22c55e;
+        color: #22c55e;
+        background: rgba(34, 197, 94, 0.1);
+      }
+
+      /* Title font-size driven by JS via --card-fs CSS var */
+      .card-title {
+        flex: 1;
+        font-family: var(--font-title);
+        font-size: var(--card-fs, 20px);
+        font-weight: 600;
+        color: var(--ink);
+        line-height: 1.25;
+        border: none;
+        background: transparent;
+        outline: none;
+        cursor: text;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        transition: color 0.25s;
+      }
+      .card-title.editing {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+      }
+
+      .card-actions {
+        display: flex;
+        gap: 2px;
+        opacity: 0;
+        transition: opacity 0.13s;
+        flex-shrink: 0;
+      }
+      .card:hover .card-actions,
+      .card.selected .card-actions {
+        opacity: 1;
+      }
+
+      .card-btn {
+        width: 1.6em;
+        height: 1.6em;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: var(--card-fs, 20px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--ink-faint);
+        transition: all 0.13s;
+      }
+      .card-btn:hover {
+        background: rgba(128, 100, 50, 0.1);
+        color: var(--ink);
+      }
+      .card-btn.danger:hover {
+        background: rgba(196, 80, 42, 0.12);
+        color: var(--accent);
+      }
+
+      /* ── BODY ───────────────────────────────────────────── */
+      .card-body {
+        flex: 1;
+        padding: 11px 18px 16px;
+        overflow: hidden;
+      }
+      .card-note {
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: transparent;
+        outline: none;
+        resize: none;
+        font-family: var(--font-title);
+        font-size: var(--card-note-fs, 17px);
+        font-style: italic;
+        font-weight: 600;
+        color: var(--ink-mid);
+        line-height: 1.6;
+        cursor: text;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        -webkit-font-smoothing: antialiased;
+        transition: color 0.25s;
+      }
+      .card-note::placeholder {
+        color: var(--ink-faint);
+        opacity: 0.55;
+        font-weight: 400;
+      }
+
+      /* ── CONNECT HANDLE ─────────────────────────────────── */
+      .connect-handle {
+        position: absolute;
+        right: -9px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 17px;
+        height: 17px;
+        border-radius: 50%;
+        background: var(--canvas-bg);
+        border: 2.5px solid var(--ink-edge);
+        cursor: crosshair;
+        opacity: 0;
+        transition:
+          opacity 0.15s,
+          transform 0.15s;
+        z-index: 10;
+      }
+      .card:hover .connect-handle,
+      .card.selected .connect-handle {
+        opacity: 1;
+      }
+      .connect-handle:hover {
+        background: var(--ink-edge);
+        transform: translateY(-50%) scale(1.3);
+      }
+
+      /* ── RESIZE HANDLE ──────────────────────────────────── */
+      .resize-handle {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 22px;
+        height: 22px;
+        cursor: nwse-resize;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 20;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        padding: 4px;
+      }
+      .resize-handle svg {
+        display: block;
+      }
+      .card:hover .resize-handle,
+      .card.selected .resize-handle {
+        opacity: 0.5;
+      }
+      .resize-handle:hover {
+        opacity: 1 !important;
+      }
+
+      /* ── URGENCY BADGE ──────────────────────────────────── */
+      .urgency-badge {
+        font-family: var(--font-ui);
+        font-size: 0.58em;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 0.18em 0.5em;
+        border-radius: 4px;
+        flex-shrink: 0;
+        font-weight: 500;
+      }
+      .badge-none {
+        display: none;
+      }
+      .badge-low {
+        background: rgba(72, 153, 106, 0.18);
+        color: #1a5c35;
+      }
+      .badge-medium {
+        background: rgba(212, 146, 10, 0.18);
+        color: #7c4d08;
+      }
+      .badge-high {
+        background: rgba(196, 80, 42, 0.18);
+        color: #8a2a10;
+      }
+      .badge-critical {
+        background: rgba(158, 16, 16, 0.18);
+        color: #7a0808;
+      }
+      html.dark .badge-low {
+        background: rgba(72, 153, 106, 0.25);
+        color: #6ee09a;
+      }
+      html.dark .badge-medium {
+        background: rgba(212, 146, 10, 0.25);
+        color: #fbbf24;
+      }
+      html.dark .badge-high {
+        background: rgba(196, 80, 42, 0.25);
+        color: #f97a50;
+      }
+      html.dark .badge-critical {
+        background: rgba(158, 16, 16, 0.3);
+        color: #f87171;
+      }
+
+      /* ── PALETTE ────────────────────────────────────────── */
+      .palette-popup {
+        position: fixed;
+        z-index: 2000;
+        background: var(--card-bg);
+        border: 2.5px solid var(--card-border);
+        border-radius: 12px;
+        box-shadow: 0 10px 40px var(--card-shadow);
+        overflow: hidden;
+        animation: popIn 0.14s cubic-bezier(0.34, 1.4, 0.64, 1);
+        min-width: 175px;
+      }
+      @keyframes popIn {
+        from {
+          opacity: 0;
+          transform: scale(0.92) translateY(-8px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+      .palette-option {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 15px;
+        cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 13.5px;
+        color: var(--ink);
+        border: none;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        transition: background 0.1s;
+        border-left: 4px solid transparent;
+      }
+      .palette-option:hover {
+        background: rgba(128, 100, 50, 0.08);
+      }
+      .palette-option.active {
+        background: rgba(128, 100, 50, 0.14);
+      }
+      .palette-swatch {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+      }
+
+      /* ── TOOLBAR ────────────────────────────────────────── */
+      #toolbar {
+        position: fixed;
+        bottom: 28px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--toolbar-bg);
+        border-radius: 14px;
+        padding: 8px 13px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        box-shadow: 0 12px 44px rgba(0, 0, 0, 0.5);
+        z-index: 500;
+        animation: slideUp 0.38s cubic-bezier(0.34, 1.4, 0.64, 1);
+        transition: background 0.35s;
+      }
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(22px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+      .tb-btn {
+        height: 36px;
+        padding: 0 12px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 12.5px;
+        letter-spacing: 0.04em;
+        color: rgba(242, 237, 227, 0.5);
+        background: transparent;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        transition: all 0.13s;
+        white-space: nowrap;
+      }
+      .tb-btn:hover {
+        background: rgba(255, 255, 255, 0.13);
+        color: var(--toolbar-text);
+      }
+      .tb-btn.primary {
+        background: rgba(255, 255, 255, 0.14);
+        color: var(--toolbar-text);
+      }
+      .tb-btn.primary:hover {
+        background: rgba(255, 255, 255, 0.23);
+      }
+      .tb-sep {
+        width: 1px;
+        height: 22px;
+        background: rgba(255, 255, 255, 0.1);
+        margin: 0 3px;
+      }
+
+      /* ── SIDEBAR ────────────────────────────────────────── */
+      #sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 248px;
+        background: var(--sidebar-bg);
+        border-right: 2px solid var(--divider);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(-100%);
+        transition:
+          transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+          background 0.35s;
+        z-index: 400;
+        box-shadow: 8px 0 36px rgba(0, 0, 0, 0.14);
+      }
+      #sidebar.open {
+        transform: translateX(0);
+      }
+      .sidebar-header {
+        padding: 26px 20px 16px;
+        border-bottom: 1px solid var(--divider);
+      }
+      .sidebar-title {
+        font-family: var(--font-title);
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--ink);
+      }
+      .sidebar-sub {
+        font-family: var(--font-ui);
+        font-size: 11px;
+        color: var(--ink-faint);
+        margin-top: 4px;
+        letter-spacing: 0.07em;
+      }
+      .board-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+      }
+      .board-item {
+        display: flex;
+        align-items: center;
+        padding: 11px 20px;
+        cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 13.5px;
+        color: var(--ink-mid);
+        transition: background 0.1s;
+        border: none;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        gap: 10px;
+      }
+      .board-item:hover {
+        background: rgba(128, 100, 50, 0.06);
+        color: var(--ink);
+      }
+      .board-item.active {
+        background: rgba(196, 80, 42, 0.09);
+        color: var(--accent);
+        border-right: 3px solid var(--accent);
+      }
+      .board-item-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+        opacity: 0.55;
+      }
+      .board-item-name {
+        flex: 1;
+      }
+      .board-item-rename {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: none;
+        font-family: var(--font-ui);
+        font-size: 13.5px;
+        color: var(--ink);
+        border-bottom: 1.5px solid var(--accent);
+        padding: 0 2px;
+        min-width: 0;
+        text-transform: uppercase;
+      }
+      .board-item-dup {
+        opacity: 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+        transition: opacity 0.1s;
+        cursor: pointer;
+        padding: 2px 4px;
+        border: none;
+        background: transparent;
+      }
+      .board-item-del {
+        opacity: 0;
+        font-size: 14px;
+        color: var(--ink-faint);
+        transition: opacity 0.1s;
+        cursor: pointer;
+        padding: 2px 5px;
+        border: none;
+        background: transparent;
+      }
+      .board-item:hover .board-item-dup,
+      .board-item:hover .board-item-del {
+        opacity: 1;
+      }
+      .board-item-dup:hover {
+        color: var(--accent);
+      }
+      .board-item-del:hover {
+        color: var(--accent);
+      }
+      .board-drag-handle {
+        flex-shrink: 0;
+        cursor: grab;
+        color: var(--ink-faint);
+        opacity: 0;
+        transition: opacity 0.1s;
+        padding: 0 4px 0 0;
+        display: flex;
+        align-items: center;
+      }
+      .board-item:hover .board-drag-handle {
+        opacity: 0.7;
+      }
+      .board-drag-handle:active {
+        cursor: grabbing;
+      }
+      .board-item.drop-above {
+        box-shadow: inset 0 2px 0 var(--accent);
+      }
+      .board-item.drop-below {
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      .sidebar-footer {
+        padding: 15px 20px;
+        border-top: 1px solid var(--divider);
+      }
+      .new-board-input {
+        width: 100%;
+        padding: 10px 13px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: var(--canvas-bg);
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        outline: none;
+        transition:
+          border-color 0.15s,
+          background 0.35s;
+      }
+      .new-board-input:focus {
+        border-color: var(--accent);
+      }
+      .new-board-input::placeholder {
+        color: var(--ink-faint);
+      }
+
+      #backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+        background: rgba(20, 12, 0, 0.22);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s;
+      }
+      #backdrop.active {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      #board-name-display {
+        position: fixed;
+        top: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: var(--font-title);
+        font-size: 31px;
+        font-style: italic;
+        color: var(--ink-faint);
+        pointer-events: none;
+        opacity: 0.6;
+      }
+      #hint {
+        position: fixed;
+        bottom: 82px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: var(--font-ui);
+        font-size: 11.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.05em;
+        pointer-events: none;
+        opacity: 0.5;
+        white-space: nowrap;
+      }
+
+      /* ── PRINT OVERLAY ──────────────────────────────────── */
+      #print-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 3000;
+        background: rgba(20, 12, 0, 0.55);
+        align-items: center;
+        justify-content: center;
+      }
+      #print-overlay.active {
+        display: flex;
+      }
+      #print-box {
+        background: var(--sidebar-bg);
+        border: 2px solid var(--card-border);
+        border-radius: 16px;
+        padding: 28px 32px;
+        min-width: 320px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        font-family: var(--font-ui);
+        color: var(--ink);
+      }
+      #print-box h2 {
+        font-family: var(--font-title);
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      #print-box p {
+        font-size: 12px;
+        color: var(--ink-faint);
+        margin-bottom: 20px;
+        line-height: 1.5;
+      }
+      .print-btn {
+        display: flex;
+        width: 100%;
+        padding: 11px 16px;
+        margin-bottom: 10px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        cursor: pointer;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.14s;
+      }
+      .print-btn:hover {
+        background: rgba(196, 80, 42, 0.08);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .print-cancel {
+        margin-top: 4px;
+        width: 100%;
+        padding: 9px;
+        border: none;
+        background: transparent;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        color: var(--ink-faint);
+        cursor: pointer;
+        border-radius: 7px;
+        transition: background 0.1s;
+      }
+      .print-cancel:hover {
+        background: rgba(128, 100, 50, 0.08);
+        color: var(--ink);
+      }
+
+      /* ── PRINT MEDIA ────────────────────────────────────── */
+      @media print {
+        #toolbar,
+        #sidebar,
+        #backdrop,
+        #board-name-display,
+        #hint,
+        #print-overlay,
+        #auth-overlay,
+        .resize-handle,
+        .connect-handle,
+        .card-actions {
+          display: none !important;
+        }
+        html,
+        body {
+          background: white !important;
+          overflow: visible !important;
+          width: auto !important;
+          height: auto !important;
+        }
+        #app,
+        #canvas {
+          position: static !important;
+          overflow: visible !important;
+          width: auto !important;
+          height: auto !important;
+        }
+        #canvas::before {
+          display: none !important;
+        }
+        #world {
+          position: static !important;
+          transform: none !important;
+        }
+        .card {
+          box-shadow: none !important;
+          transform: none !important;
+          animation: none !important;
+          break-inside: avoid;
+        }
+      }
+
+      /* ── AUTH OVERLAY ───────────────────────────────────── */
+      #auth-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 4000;
+        background: rgba(20, 12, 0, 0.6);
+        align-items: center;
+        justify-content: center;
+      }
+      #auth-overlay.active {
+        display: flex;
+      }
+      #auth-box {
+        background: var(--sidebar-bg);
+        border: 2px solid var(--card-border);
+        border-radius: 16px;
+        padding: 32px 36px;
+        width: 320px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        animation: popIn 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+      }
+      .auth-title {
+        font-family: var(--font-title);
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--ink);
+      }
+      .auth-sub {
+        font-family: var(--font-ui);
+        font-size: 11.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.05em;
+        margin-bottom: 2px;
+      }
+      #auth-email,
+      #auth-password {
+        width: 100%;
+        padding: 10px 13px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: var(--canvas-bg);
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        outline: none;
+        transition:
+          border-color 0.15s,
+          background 0.35s;
+      }
+      #auth-email:focus,
+      #auth-password:focus {
+        border-color: var(--accent);
+      }
+      #auth-error {
+        font-family: var(--font-ui);
+        font-size: 12px;
+        color: var(--accent);
+        min-height: 16px;
+      }
+      .auth-row {
+        display: flex;
+        gap: 10px;
+      }
+      .auth-row button {
+        flex: 1;
+        padding: 10px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.14s;
+      }
+      .auth-row button:hover {
+        background: rgba(196, 80, 42, 0.08);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .auth-row button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .auth-meta-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: -2px 0;
+      }
+      .auth-remember {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        color: var(--ink-faint);
+        cursor: pointer;
+        user-select: none;
+      }
+      .auth-remember input[type="checkbox"] {
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .auth-link {
+        border: none;
+        background: transparent;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        color: var(--ink-faint);
+        cursor: pointer;
+        padding: 0;
+        transition: color 0.13s;
+      }
+      .auth-link:hover {
+        color: var(--accent);
+      }
+      .auth-back {
+        display: block;
+        margin-top: 4px;
+        text-align: center;
+        width: 100%;
+      }
+      .auth-row-single {
+        width: 100%;
+        padding: 11px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.14s;
+      }
+      .auth-row-single:hover {
+        background: rgba(196, 80, 42, 0.08);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #auth-reset-msg,
+      #auth-newpass-msg {
+        font-family: var(--font-ui);
+        font-size: 12px;
+        min-height: 16px;
+      }
+      #auth-reset-email,
+      #auth-newpass {
+        width: 100%;
+        padding: 10px 13px;
+        border: 2px solid var(--card-border);
+        border-radius: 9px;
+        background: var(--canvas-bg);
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s, background 0.35s;
+      }
+      #auth-reset-email:focus,
+      #auth-newpass:focus {
+        border-color: var(--accent);
+      }
+      .auth-cancel {
+        border: none;
+        background: transparent;
+        font-family: var(--font-ui);
+        font-size: 12px;
+        color: var(--ink-faint);
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 7px;
+        transition: background 0.1s;
+        text-align: center;
+      }
+      .auth-cancel:hover {
+        background: rgba(128, 100, 50, 0.08);
+        color: var(--ink);
+      }
+
+      /* ── SYNC DOT ────────────────────────────────────────── */
+      .sync-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.15);
+        flex-shrink: 0;
+        transition: background 0.4s;
+      }
+      .sync-dot.saving {
+        background: #d4920a;
+        animation: pulse 1s infinite;
+      }
+      .sync-dot.saved {
+        background: #48996a;
+      }
+      .sync-dot.error {
+        background: #c4502a;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--card-border);
+        border-radius: 4px;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="canvas">
+        <div id="world"><svg id="svg-layer"></svg></div>
+      </div>
+    </div>
+
+    <div id="board-name-display"></div>
+    <div id="hint">
+      double-click to create · drag ◉ to connect · drag ◢ to resize · del to
+      delete · f fit
+    </div>
+
+    <div id="backdrop"></div>
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Inkmap</div>
+        <div class="sidebar-sub">YOUR BOARDS</div>
+      </div>
+      <div class="board-list" id="board-list"></div>
+      <div class="sidebar-footer">
+        <input
+          class="new-board-input"
+          id="new-board-input"
+          placeholder="New board name + Enter"
+          maxlength="42"
+        />
+      </div>
+    </div>
+
+    <div id="print-overlay">
+      <div id="print-box">
+        <h2>Export as PNG</h2>
+        <p>
+          Renders your board to a PNG image. UI chrome is hidden, background
+          included.
+        </p>
+        <button class="print-btn" id="btn-print-go">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 15 15"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
+            <rect x="2" y="2" width="11" height="11" rx="2" />
+            <circle
+              cx="5.5"
+              cy="5.5"
+              r="1.2"
+              fill="currentColor"
+              stroke="none"
+            />
+            <path
+              d="M2 10 L5 7 L7.5 9.5 L10 7 L13 10"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Download PNG
+        </button>
+        <div
+          id="export-progress"
+          style="
+            display: none;
+            font-size: 12px;
+            color: var(--ink-faint);
+            margin-top: 8px;
+            text-align: center;
+          "
+        >
+          Rendering…
+        </div>
+        <button class="print-cancel" id="btn-print-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="auth-overlay">
+      <div id="auth-box">
+
+        <!-- ── Sign in view ── -->
+        <div id="auth-view-main">
+          <div class="auth-title">Inkmap Cloud</div>
+          <div class="auth-sub">Sign in to sync your boards across devices</div>
+          <input id="auth-email" type="email" placeholder="Email" autocomplete="email" />
+          <input
+            id="auth-password"
+            type="password"
+            placeholder="Password"
+            autocomplete="current-password"
+          />
+          <div class="auth-meta-row">
+            <label class="auth-remember">
+              <input type="checkbox" id="auth-remember" />
+              Remember me
+            </label>
+            <button class="auth-link" id="btn-forgot">Forgot password?</button>
+          </div>
+          <div id="auth-error"></div>
+          <div class="auth-row">
+            <button id="btn-auth-signin">Sign in</button>
+            <button id="btn-auth-signup">Sign up</button>
+          </div>
+          <button class="auth-cancel" id="btn-auth-cancel">Cancel</button>
+        </div>
+
+        <!-- ── Forgot password view ── -->
+        <div id="auth-view-reset" style="display:none">
+          <div class="auth-title">Reset password</div>
+          <div class="auth-sub">We'll send a reset link to your email</div>
+          <input id="auth-reset-email" type="email" placeholder="Email" autocomplete="email" />
+          <div id="auth-reset-msg"></div>
+          <button class="auth-row-single" id="btn-send-reset">Send reset link</button>
+          <button class="auth-link auth-back" id="btn-back-signin">← Back to sign in</button>
+        </div>
+
+        <!-- ── New password view (after clicking reset link) ── -->
+        <div id="auth-view-newpass" style="display:none">
+          <div class="auth-title">Set new password</div>
+          <div class="auth-sub">Choose a new password for your account</div>
+          <input id="auth-newpass" type="password" placeholder="New password" autocomplete="new-password" />
+          <div id="auth-newpass-msg"></div>
+          <button class="auth-row-single" id="btn-set-newpass">Update password</button>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="toolbar">
+      <button class="tb-btn" id="btn-boards" title="Boards (B)">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+        >
+          <rect x="1" y="1" width="5" height="5" rx="1.3" />
+          <rect x="8" y="1" width="5" height="5" rx="1.3" />
+          <rect x="1" y="8" width="5" height="5" rx="1.3" />
+          <rect x="8" y="8" width="5" height="5" rx="1.3" />
+        </svg>
+        Boards
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn primary" id="btn-add" title="New card (N)">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.3"
+        >
+          <line x1="6" y1="1" x2="6" y2="11" />
+          <line x1="1" y1="6" x2="11" y2="6" />
+        </svg>
+        New card
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-undo" title="Undo (Ctrl+Z)">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path
+            d="M2.5 5.5C2.5 3 5 1.5 7.5 1.5 10 1.5 12 3.5 12 6s-1.5 5-4.5 5"
+          />
+          <polyline points="2.5,2.5 2.5,6 6,6" />
+        </svg>
+      </button>
+      <button class="tb-btn" id="btn-redo" title="Redo (Ctrl+Y)">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path
+            d="M11.5 5.5C11.5 3 9 1.5 6.5 1.5 4 1.5 2 3.5 2 6s1.5 5 4.5 5"
+          />
+          <polyline points="11.5,2.5 11.5,6 8,6" />
+        </svg>
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-fit" title="Fit view (F)">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <polyline points="1,4.5 1,1 4.5,1" />
+          <polyline points="9.5,1 13,1 13,4.5" />
+          <polyline points="1,9.5 1,13 4.5,13" />
+          <polyline points="9.5,13 13,13 13,9.5" />
+        </svg>
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-export" title="Print / Export (P)">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 15 15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <rect x="2" y="4" width="11" height="8" rx="1.5" />
+          <path d="M4 4V2.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1V4" />
+          <line x1="5" y1="9" x2="10" y2="9" />
+        </svg>
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-save-json" title="Save data to file">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M7 2 L7 9" stroke-linecap="round" />
+          <path
+            d="M4 7 L7 10 L10 7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M2 11 L12 11" stroke-linecap="round" />
+        </svg>
+        Save
+      </button>
+      <button class="tb-btn" id="btn-load-json" title="Open saved data">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M7 10 L7 3" stroke-linecap="round" />
+          <path
+            d="M4 5 L7 2 L10 5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M2 11 L12 11" stroke-linecap="round" />
+        </svg>
+        Open
+      </button>
+      <input type="file" id="file-input" accept=".json" style="display: none" />
+      <div class="tb-sep"></div>
+      <div class="tb-sep"></div>
+      <span id="sync-dot" class="sync-dot" title=""></span>
+      <button class="tb-btn" id="btn-auth" title="Sign in to sync">
+        Sign in
+      </button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-dark" title="Theme (T)">
+        <svg
+          id="icon-moon"
+          width="15"
+          height="15"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M12.5 9A6 6 0 0 1 5 1.5a6 6 0 1 0 7.5 7.5z" />
+        </svg>
+        <svg
+          id="icon-sun"
+          width="15"
+          height="15"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          style="display: none"
+        >
+          <circle cx="7" cy="7" r="2.8" />
+          <line x1="7" y1="1" x2="7" y2="2.6" />
+          <line x1="7" y1="11.4" x2="7" y2="13" />
+          <line x1="1" y1="7" x2="2.6" y2="7" />
+          <line x1="11.4" y1="7" x2="13" y2="7" />
+          <line x1="3.1" y1="3.1" x2="4.2" y2="4.2" />
+          <line x1="9.8" y1="9.8" x2="10.9" y2="10.9" />
+          <line x1="10.9" y1="3.1" x2="9.8" y2="4.2" />
+          <line x1="4.2" y1="9.8" x2="3.1" y2="10.9" />
+        </svg>
+      </button>
+    </div>
+
+    <script>
+      // ── SUPABASE CONFIG ─────────────────────────────────────────────────────────
+      // Paste your project URL and anon key from supabase.com → Project Settings → API
+      const SUPABASE_URL = "https://coxrkucbtqjavfftwfzh.supabase.co";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNveHJrdWNidHFqYXZmZnR3ZnpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTc5MTYsImV4cCI6MjA4OTM3MzkxNn0.aKC7kR8hianYhu3c3ECZh-5AOX9CyhbFOuRfoRacCEg";
+
+      const supabaseReady = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+      const supa = supabaseReady
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        : null;
+
+      let currentUser = null;
+      let syncDebounceTimer = null;
+      const SYNC_DEBOUNCE_MS = 800;
+
+      const URGENCY = [
+        { id: "none", label: "None", colour: "transparent", swatch: "#A89070" },
+        { id: "low", label: "Low", colour: "#48996A", swatch: "#48996A" },
+        { id: "medium", label: "Medium", colour: "#D4920A", swatch: "#D4920A" },
+        { id: "high", label: "High", colour: "#C4502A", swatch: "#C4502A" },
+        {
+          id: "critical",
+          label: "Critical",
+          colour: "#9E1010",
+          swatch: "#9E1010",
+        },
+      ];
+
+      // Default card dimensions
+      const DEFAULT_W = 300;
+      const DEFAULT_H = 180;
+
+      // Font scale: title and note sizes relative to card width
+      function cardFontSize(w) {
+        return Math.round(12 + (w - 200) * 0.04);
+      } // 200→12, 300→16, 500→24
+      function noteFontSize(w) {
+        return Math.round(10 + (w - 200) * 0.032);
+      } // 200→10, 300→13.2, 500→19.6
+
+      function applyCardFonts(el, w) {
+        el.style.setProperty("--card-fs", cardFontSize(w) + "px");
+        el.style.setProperty("--card-note-fs", noteFontSize(w) + "px");
+        // also scale done-btn and card-btn via font-size on header
+        el.querySelector(".card-header").style.fontSize =
+          cardFontSize(w) + "px";
+      }
+
+      let boards = [],
+        activeBoardId = null;
+      let viewport = { x: 0, y: 0, scale: 1 };
+      let history = [],
+        historyIndex = -1;
+      let previewEdge = null,
+        activePopup = null;
+      let isPanning = false,
+        panStart = { x: 0, y: 0 };
+      let darkMode = false;
+
+      function save() {
+        try {
+          localStorage.setItem(
+            "inkmap5",
+            JSON.stringify({ boards, activeBoardId, darkMode }),
+          );
+        } catch (e) {}
+        if (supa && currentUser) {
+          clearTimeout(syncDebounceTimer);
+          setSyncDot("saving");
+          syncDebounceTimer = setTimeout(cloudPush, SYNC_DEBOUNCE_MS);
+        }
+      }
+      function load() {
+        try {
+          const d = JSON.parse(localStorage.getItem("inkmap5") || "null");
+          if (d) {
+            boards = d.boards || [];
+            activeBoardId = d.activeBoardId;
+            darkMode = !!d.darkMode;
+          }
+        } catch (e) {}
+        if (!boards.length) {
+          const id = uid();
+          boards = [{ id, name: "My First Board", cards: [], edges: [] }];
+          activeBoardId = id;
+        }
+        if (!boards.find((b) => b.id === activeBoardId))
+          activeBoardId = boards[0].id;
+      }
+      function uid() {
+        return Math.random().toString(36).slice(2, 11);
+      }
+
+      // ── SYNC STATUS ───────────────────────────────────────────────────────────
+      function setSyncDot(state) {
+        const dot = document.getElementById("sync-dot");
+        dot.className = "sync-dot " + state;
+        dot.title =
+          {
+            saving: "Saving…",
+            saved: "Saved to cloud",
+            error: "Sync failed — changes saved locally",
+          }[state] || "";
+      }
+
+      // ── CLOUD PUSH / PULL ─────────────────────────────────────────────────────
+      async function cloudPush() {
+        if (!supa || !currentUser) return;
+        try {
+          const { error } = await supa.from("inkmap_data").upsert(
+            {
+              user_id: currentUser.id,
+              data: { boards, activeBoardId, darkMode },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          );
+          if (error) throw error;
+          setSyncDot("saved");
+        } catch (e) {
+          console.warn("Inkmap sync error:", e);
+          setSyncDot("error");
+        }
+      }
+
+      async function cloudPull() {
+        if (!supa || !currentUser) return null;
+        try {
+          const { data, error } = await supa
+            .from("inkmap_data")
+            .select("data")
+            .eq("user_id", currentUser.id)
+            .single();
+          // PGRST116 = no rows found — not an error for us
+          if (error && error.code !== "PGRST116") throw error;
+          return data?.data ?? null;
+        } catch (e) {
+          console.warn("Inkmap pull error:", e);
+          return null;
+        }
+      }
+
+      // ── AUTH UI ───────────────────────────────────────────────────────────────
+      function showAuthView(view) {
+        ["main", "reset", "newpass"].forEach((v) => {
+          document.getElementById("auth-view-" + v).style.display =
+            v === view ? "" : "none";
+        });
+      }
+      function openAuthPanel() {
+        document.getElementById("auth-error").textContent = "";
+        document.getElementById("auth-error").style.color = "var(--accent)";
+        // Pre-fill remembered email
+        const remembered = localStorage.getItem("inkmap_remember_email") || "";
+        document.getElementById("auth-email").value = remembered;
+        document.getElementById("auth-remember").checked = !!remembered;
+        document.getElementById("auth-password").value = "";
+        showAuthView("main");
+        document.getElementById("auth-overlay").classList.add("active");
+        setTimeout(
+          () =>
+            document
+              .getElementById(remembered ? "auth-password" : "auth-email")
+              .focus(),
+          50,
+        );
+      }
+      function closeAuthPanel() {
+        document.getElementById("auth-overlay").classList.remove("active");
+      }
+
+      function updateAuthButton() {
+        const btn = document.getElementById("btn-auth");
+        const dot = document.getElementById("sync-dot");
+        if (!supabaseReady) {
+          btn.style.display = "none";
+          dot.style.display = "none";
+          return;
+        }
+        if (currentUser) {
+          const label = (currentUser.email || "").split("@")[0].slice(0, 14);
+          btn.textContent = label + " · Sign out";
+          btn.title =
+            "Signed in as " + currentUser.email + " — click to sign out";
+          dot.style.display = "inline-block";
+        } else {
+          btn.textContent = "Sign in";
+          btn.title = "Sign in to sync across devices";
+          dot.style.display = "none";
+        }
+      }
+
+      function applyCloudData(cloudData) {
+        boards = cloudData.boards || [];
+        activeBoardId = cloudData.activeBoardId;
+        if (cloudData.darkMode !== undefined) {
+          darkMode = cloudData.darkMode;
+          applyDarkMode();
+        }
+        if (!boards.length) {
+          const id = uid();
+          boards = [{ id, name: "My First Board", cards: [], edges: [] }];
+          activeBoardId = id;
+        }
+        if (!boards.find((b) => b.id === activeBoardId))
+          activeBoardId = boards[0].id;
+        save();
+        initHistory();
+        fullRebuild();
+        renderEdges();
+        setTimeout(() => {
+          if (getBoard()?.cards.length) fitView();
+        }, 60);
+        setSyncDot("saved");
+      }
+
+      async function onSignedIn(user) {
+        currentUser = user;
+        updateAuthButton();
+        closeAuthPanel();
+        const cloudData = await cloudPull();
+        if (!cloudData) {
+          // First time — push local data up
+          await cloudPush();
+          return;
+        }
+        const localRaw = localStorage.getItem("inkmap5");
+        const hasLocal = localRaw && JSON.parse(localRaw)?.boards?.length;
+        if (hasLocal) {
+          const useCloud = confirm(
+            "Load your cloud data?\n\nOK = Load cloud (replaces local)\nCancel = Keep local (overwrites cloud)",
+          );
+          if (useCloud) {
+            applyCloudData(cloudData);
+          } else {
+            await cloudPush();
+            setSyncDot("saved");
+          }
+        } else {
+          applyCloudData(cloudData);
+        }
+      }
+
+      async function sendPasswordReset() {
+        if (!supa) return;
+        const email = document.getElementById("auth-reset-email").value.trim();
+        const msgEl = document.getElementById("auth-reset-msg");
+        msgEl.textContent = "";
+        if (!email) {
+          msgEl.style.color = "var(--accent)";
+          msgEl.textContent = "Please enter your email.";
+          return;
+        }
+        const btn = document.getElementById("btn-send-reset");
+        btn.disabled = true;
+        btn.textContent = "Sending…";
+        try {
+          const { error } = await supa.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.href.split("?")[0].split("#")[0],
+          });
+          if (error) throw error;
+          msgEl.style.color = "var(--u-low-bdr)";
+          msgEl.textContent = "Reset link sent — check your email.";
+          btn.textContent = "Sent ✓";
+        } catch (e) {
+          msgEl.style.color = "var(--accent)";
+          msgEl.textContent = e.message;
+          btn.disabled = false;
+          btn.textContent = "Send reset link";
+        }
+      }
+
+      async function setNewPassword() {
+        if (!supa) return;
+        const password = document.getElementById("auth-newpass").value;
+        const msgEl = document.getElementById("auth-newpass-msg");
+        msgEl.textContent = "";
+        if (password.length < 6) {
+          msgEl.style.color = "var(--accent)";
+          msgEl.textContent = "Password must be at least 6 characters.";
+          return;
+        }
+        const btn = document.getElementById("btn-set-newpass");
+        btn.disabled = true;
+        btn.textContent = "Updating…";
+        try {
+          const { error } = await supa.auth.updateUser({ password });
+          if (error) throw error;
+          msgEl.style.color = "var(--u-low-bdr)";
+          msgEl.textContent = "Password updated! You are now signed in.";
+          btn.textContent = "Done ✓";
+          setTimeout(closeAuthPanel, 1500);
+        } catch (e) {
+          msgEl.style.color = "var(--accent)";
+          msgEl.textContent = e.message;
+          btn.disabled = false;
+          btn.textContent = "Update password";
+        }
+      }
+
+      async function doSignOut() {
+        if (!supa) return;
+        clearTimeout(syncDebounceTimer);
+        await supa.auth.signOut();
+        currentUser = null;
+        updateAuthButton();
+      }
+
+      async function attemptAuth(isSignUp) {
+        if (!supa) return;
+        const email = document.getElementById("auth-email").value.trim();
+        const password = document.getElementById("auth-password").value;
+        const errEl = document.getElementById("auth-error");
+        errEl.textContent = "";
+        if (!email || !password) {
+          errEl.textContent = "Email and password are required.";
+          return;
+        }
+        const btnIn = document.getElementById("btn-auth-signin");
+        const btnUp = document.getElementById("btn-auth-signup");
+        btnIn.disabled = btnUp.disabled = true;
+        const origIn = btnIn.textContent, origUp = btnUp.textContent;
+        if (isSignUp) btnUp.textContent = "…";
+        else btnIn.textContent = "…";
+        try {
+          const { data, error } = isSignUp
+            ? await supa.auth.signUp({ email, password })
+            : await supa.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          if (isSignUp && !data.session) {
+            errEl.style.color = "var(--u-low-bdr)";
+            errEl.textContent = "Check your email to confirm your account.";
+            return;
+          }
+          // Save or clear remembered email
+          const remember = document.getElementById("auth-remember").checked;
+          if (remember) localStorage.setItem("inkmap_remember_email", email);
+          else localStorage.removeItem("inkmap_remember_email");
+          // onAuthStateChange will call onSignedIn
+        } catch (e) {
+          errEl.textContent = e.message;
+        } finally {
+          btnIn.textContent = origIn;
+          btnUp.textContent = origUp;
+          btnIn.disabled = btnUp.disabled = false;
+        }
+      }
+
+      function getBoard() {
+        return boards.find((b) => b.id === activeBoardId);
+      }
+
+      function applyDarkMode() {
+        document.documentElement.classList.toggle("dark", darkMode);
+        document.getElementById("icon-moon").style.display = darkMode
+          ? "none"
+          : "block";
+        document.getElementById("icon-sun").style.display = darkMode
+          ? "block"
+          : "none";
+      }
+
+      function snapshot() {
+        const b = getBoard();
+        if (!b) return;
+        history = history.slice(0, historyIndex + 1);
+        history.push(JSON.stringify({ cards: b.cards, edges: b.edges }));
+        if (history.length > 60) history.shift();
+        historyIndex = history.length - 1;
+      }
+      function undo() {
+        if (historyIndex <= 0) return;
+        historyIndex--;
+        applyHistory();
+      }
+      function redo() {
+        if (historyIndex >= history.length - 1) return;
+        historyIndex++;
+        applyHistory();
+      }
+      function applyHistory() {
+        const b = getBoard();
+        if (!b) return;
+        const e = JSON.parse(history[historyIndex]);
+        b.cards = e.cards;
+        b.edges = e.edges;
+        save();
+        fullRebuild();
+        renderEdges();
+      }
+      function initHistory() {
+        history = [];
+        historyIndex = -1;
+        snapshot();
+      }
+
+      const world = document.getElementById("world");
+      const svgLayer = document.getElementById("svg-layer");
+      const canvas = document.getElementById("canvas");
+
+      function setViewport() {
+        world.style.transform = `translate(${viewport.x}px,${viewport.y}px) scale(${viewport.scale})`;
+      }
+
+      function fullRebuild() {
+        world.querySelectorAll(".card").forEach((el) => el.remove());
+        const b = getBoard();
+        if (b) b.cards.forEach((card) => createCardEl(card));
+        document.getElementById("board-name-display").textContent =
+          b?.name || "";
+        renderBoardList();
+      }
+
+      function syncCard(card) {
+        const el = world.querySelector(`.card[data-id="${card.id}"]`);
+        if (!el) return;
+        URGENCY.forEach((u) => el.classList.remove(`u-${u.id}`));
+        el.classList.add(`u-${card.urgency || "none"}`);
+        el.classList.toggle("done", !!card.done);
+        let badge = el.querySelector(".urgency-badge");
+        if (card.urgency && card.urgency !== "none") {
+          const u = URGENCY.find((u) => u.id === card.urgency);
+          if (!badge) {
+            badge = document.createElement("span");
+            el.querySelector(".card-header").insertBefore(
+              badge,
+              el.querySelector(".card-actions"),
+            );
+          }
+          badge.className = `urgency-badge badge-${card.urgency}`;
+          badge.textContent = u.label;
+        } else {
+          badge?.remove();
+        }
+      }
+
+      // ── CREATE CARD EL ────────────────────────────────────────────────────────────
+      function createCardEl(card) {
+        // Ensure dimensions stored
+        if (!card.w) card.w = DEFAULT_W;
+        if (!card.h) card.h = DEFAULT_H;
+
+        const el = document.createElement("div");
+        el.className = `card u-${card.urgency || "none"}`;
+        el.dataset.id = card.id;
+        if (card.done) el.classList.add("done");
+        el.style.left = card.x + "px";
+        el.style.top = card.y + "px";
+        el.style.width = card.w + "px";
+        el.style.height = card.h + "px";
+
+        const u = URGENCY.find((u) => u.id === (card.urgency || "none"));
+        const badgeHtml =
+          card.urgency && card.urgency !== "none"
+            ? `<span class="urgency-badge badge-${card.urgency}">${u.label}</span>`
+            : "";
+
+        el.innerHTML = `
+    <div class="card-header">
+      <button class="card-done-btn" title="Mark done">✓</button>
+      <div class="card-title" contenteditable="false" spellcheck="false">${esc(card.title || "Untitled")}</div>
+      ${badgeHtml}
+      <div class="card-actions">
+        <button class="card-btn" data-action="duplicate" title="Duplicate card">
+          <svg width="1em" height="1em" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="4" y="4" width="8" height="8" rx="1.5"/>
+            <path d="M2 10V2.5A1.5 1.5 0 0 1 3.5 1H10" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="card-btn" data-action="palette" title="Urgency">
+          <svg width="1em" height="1em" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="7" cy="7" r="6"/>
+            <circle cx="5" cy="6" r="1.1" fill="currentColor" stroke="none"/>
+            <circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none"/>
+            <path d="M4.5 9.5 Q7 11.5 9.5 9.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="card-btn danger" data-action="delete" title="Delete">
+          <svg width="1em" height="1em" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.1">
+            <line x1="3" y1="3" x2="11" y2="11"/><line x1="11" y1="3" x2="3" y2="11"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+      <textarea class="card-note" placeholder="Add a note…" spellcheck="false">${esc(card.note || "")}</textarea>
+    </div>
+    <div class="connect-handle" title="Drag to connect"></div>
+    <div class="resize-handle" title="Drag to resize">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" opacity="0.6">
+        <line x1="9" y1="3" x2="3" y2="9"/><line x1="9" y1="6" x2="6" y2="9"/>
+      </svg>
+    </div>`;
+
+        // Now safe to query — innerHTML is set
+        applyCardFonts(el, card.w);
+
+        const header = el.querySelector(".card-header");
+        const titleEl = el.querySelector(".card-title");
+        const noteEl = el.querySelector(".card-note");
+        const doneBtn = el.querySelector(".card-done-btn");
+        const handle = el.querySelector(".connect-handle");
+        const resizeHandle = el.querySelector(".resize-handle");
+
+        // Drag to move
+        header.addEventListener("mousedown", (e) => {
+          if (e.target.closest("button,[data-action]")) return;
+          if (
+            e.target === titleEl &&
+            titleEl.getAttribute("contenteditable") === "true"
+          )
+            return;
+          startDrag(e, card.id, el);
+        });
+
+        el.addEventListener("mousedown", (e) => {
+          if (
+            !e.target.closest(
+              "button,[data-action],.connect-handle,.card-note,.resize-handle",
+            )
+          )
+            selectCard(card.id);
+        });
+
+        // Edit title
+        titleEl.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          titleEl.setAttribute("contenteditable", "true");
+          titleEl.classList.add("editing");
+          titleEl.focus();
+          selAll(titleEl);
+        });
+        titleEl.addEventListener("blur", () => {
+          titleEl.setAttribute("contenteditable", "false");
+          titleEl.classList.remove("editing");
+          const b = getBoard();
+          const c = b?.cards.find((c) => c.id === card.id);
+          if (c) {
+            c.title = titleEl.textContent.trim() || "Untitled";
+            titleEl.textContent = c.title;
+            save();
+          }
+        });
+        titleEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            titleEl.blur();
+          }
+          e.stopPropagation();
+        });
+
+        // Note
+        noteEl.addEventListener("input", () => {
+          const b = getBoard();
+          const c = b?.cards.find((c) => c.id === card.id);
+          if (c) {
+            c.note = noteEl.value;
+            save();
+          }
+        });
+        noteEl.addEventListener("mousedown", (e) => e.stopPropagation());
+        noteEl.addEventListener("click", (e) => e.stopPropagation());
+        noteEl.addEventListener("keydown", (e) => e.stopPropagation());
+
+        // Done
+        doneBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          snapshot();
+          const b = getBoard();
+          const c = b?.cards.find((c) => c.id === card.id);
+          if (c) {
+            c.done = !c.done;
+            el.classList.toggle("done", c.done);
+            save();
+          }
+        });
+
+        // Action buttons
+        el.addEventListener("click", (e) => {
+          const action = e.target.closest("[data-action]")?.dataset.action;
+          if (!action) return;
+          e.stopPropagation();
+          if (action === "delete") {
+            snapshot();
+            const b = getBoard();
+            b.cards = b.cards.filter((c) => c.id !== card.id);
+            b.edges = b.edges.filter(
+              (ed) => ed.from !== card.id && ed.to !== card.id,
+            );
+            save();
+            el.remove();
+            renderEdges();
+          }
+          if (action === "duplicate") {
+            snapshot();
+            const b = getBoard();
+            const src = b?.cards.find((c) => c.id === card.id);
+            if (src) {
+              const copy = JSON.parse(JSON.stringify(src));
+              copy.id = uid();
+              copy.x = src.x + 30;
+              copy.y = src.y + 30;
+              b.cards.push(copy);
+              save();
+              createCardEl(copy);
+              renderEdges();
+              selectCard(copy.id);
+            }
+          }
+          if (action === "palette")
+            showPalette(e.target.closest("[data-action]"), card.id);
+        });
+
+        // Connect
+        handle.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          startConnect(e, card.id);
+        });
+
+        // ── RESIZE ──────────────────────────────────────────────
+        resizeHandle.addEventListener("mousedown", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          snapshot();
+          const startWP = s2w(e.clientX, e.clientY);
+          const startW = card.w,
+            startH = card.h;
+          el.classList.add("resizing");
+          selectCard(card.id);
+
+          const onMove = (ev) => {
+            const wp = s2w(ev.clientX, ev.clientY);
+            const newW = Math.max(200, startW + (wp.x - startWP.x));
+            const newH = Math.max(120, startH + (wp.y - startWP.y));
+            card.w = Math.round(newW);
+            card.h = Math.round(newH);
+            el.style.width = card.w + "px";
+            el.style.height = card.h + "px";
+            applyCardFonts(el, card.w);
+            renderEdges();
+          };
+          const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            el.classList.remove("resizing");
+            save();
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+        });
+
+        world.appendChild(el);
+        return el;
+      }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+      function selAll(el) {
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      }
+
+      // ── EDGES ─────────────────────────────────────────────────────────────────────
+      function renderEdges() {
+        svgLayer.innerHTML = "";
+        const b = getBoard();
+        if (!b) return;
+        const maxX = b.cards.length
+          ? Math.max(...b.cards.map((c) => c.x + (c.w || DEFAULT_W))) + 500
+          : 2000;
+        const maxY = b.cards.length
+          ? Math.max(...b.cards.map((c) => c.y + (c.h || DEFAULT_H))) + 500
+          : 2000;
+        svgLayer.setAttribute("width", maxX);
+        svgLayer.setAttribute("height", maxY);
+        b.edges.forEach((edge) => {
+          const from = b.cards.find((c) => c.id === edge.from),
+            to = b.cards.find((c) => c.id === edge.to);
+          if (!from || !to) return;
+          const path = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+          );
+          path.setAttribute("class", "edge");
+          path.setAttribute("d", bezier(from, to));
+          path.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (!confirm("Remove this connection?")) return;
+            snapshot();
+            const b = getBoard();
+            b.edges = b.edges.filter(
+              (ed) => !(ed.from === edge.from && ed.to === edge.to),
+            );
+            save();
+            renderEdges();
+          });
+          svgLayer.appendChild(path);
+        });
+      }
+
+      function bezier(from, to) {
+        const fw = from.w || DEFAULT_W,
+          fh = from.h || DEFAULT_H;
+        const tw = to.w || DEFAULT_W,
+          th = to.h || DEFAULT_H;
+        const fx = from.x + fw,
+          fy = from.y + fh / 2;
+        const tx = to.x,
+          ty = to.y + th / 2;
+        const dx = Math.abs(tx - fx) * 0.55;
+        return `M ${fx} ${fy} C ${fx + dx} ${fy}, ${tx - dx} ${ty}, ${tx} ${ty}`;
+      }
+
+      // ── CONNECT ───────────────────────────────────────────────────────────────────
+      function startConnect(e, fromId) {
+        previewEdge = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        previewEdge.setAttribute("class", "edge preview");
+        svgLayer.appendChild(previewEdge);
+        const onMove = (ev) => {
+          const from = getBoard()?.cards.find((c) => c.id === fromId);
+          if (!from) return;
+          const wp = s2w(ev.clientX, ev.clientY);
+          const fw = from.w || DEFAULT_W,
+            fh = from.h || DEFAULT_H;
+          const fx = from.x + fw,
+            fy = from.y + fh / 2,
+            tx = wp.x,
+            ty = wp.y,
+            dx = Math.abs(tx - fx) * 0.5;
+          previewEdge.setAttribute(
+            "d",
+            `M ${fx} ${fy} C ${fx + dx} ${fy}, ${tx - dx} ${ty}, ${tx} ${ty}`,
+          );
+        };
+        const onUp = (ev) => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          previewEdge?.remove();
+          previewEdge = null;
+          const toId = document
+            .elementFromPoint(ev.clientX, ev.clientY)
+            ?.closest(".card")?.dataset.id;
+          if (toId && toId !== fromId) {
+            snapshot();
+            const b = getBoard();
+            if (
+              !b.edges.find(
+                (ed) =>
+                  (ed.from === fromId && ed.to === toId) ||
+                  (ed.from === toId && ed.to === fromId),
+              )
+            ) {
+              b.edges.push({ from: fromId, to: toId });
+              save();
+              renderEdges();
+            }
+          }
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      }
+
+      // ── DRAG ──────────────────────────────────────────────────────────────────────
+      function startDrag(e, cardId, el) {
+        e.preventDefault();
+        selectCard(cardId);
+        const b = getBoard();
+        const card = b?.cards.find((c) => c.id === cardId);
+        if (!card) return;
+        const wp = s2w(e.clientX, e.clientY);
+        const ox = wp.x - card.x,
+          oy = wp.y - card.y;
+        snapshot();
+        el.style.zIndex = 100;
+        const onMove = (ev) => {
+          const p = s2w(ev.clientX, ev.clientY);
+          card.x = p.x - ox;
+          card.y = p.y - oy;
+          el.style.left = card.x + "px";
+          el.style.top = card.y + "px";
+          renderEdges();
+        };
+        const onUp = () => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          el.style.zIndex = "";
+          save();
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      }
+
+      function s2w(sx, sy) {
+        return {
+          x: (sx - viewport.x) / viewport.scale,
+          y: (sy - viewport.y) / viewport.scale,
+        };
+      }
+
+      // ── PAN & ZOOM ────────────────────────────────────────────────────────────────
+      canvas.addEventListener("mousedown", (e) => {
+        if (e.target.closest(".card,#sidebar,#toolbar")) return;
+        isPanning = true;
+        panStart = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
+        canvas.style.cursor = "grabbing";
+      });
+      window.addEventListener("mousemove", (e) => {
+        if (!isPanning) return;
+        viewport.x = e.clientX - panStart.x;
+        viewport.y = e.clientY - panStart.y;
+        setViewport();
+      });
+      window.addEventListener("mouseup", () => {
+        if (isPanning) {
+          isPanning = false;
+          canvas.style.cursor = "";
+        }
+      });
+      canvas.addEventListener("dblclick", (e) => {
+        if (e.target.closest(".card")) return;
+        const p = s2w(e.clientX, e.clientY);
+        addCard(p.x - DEFAULT_W / 2, p.y - DEFAULT_H / 2);
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const d = e.deltaY > 0 ? 0.91 : 1.1,
+            ns = Math.max(0.25, Math.min(2.8, viewport.scale * d));
+          viewport.x =
+            e.clientX - (e.clientX - viewport.x) * (ns / viewport.scale);
+          viewport.y =
+            e.clientY - (e.clientY - viewport.y) * (ns / viewport.scale);
+          viewport.scale = ns;
+          setViewport();
+        },
+        { passive: false },
+      );
+
+      function selectCard(id) {
+        world
+          .querySelectorAll(".card.selected")
+          .forEach((el) => el.classList.remove("selected"));
+        if (id)
+          world
+            .querySelector(`.card[data-id="${id}"]`)
+            ?.classList.add("selected");
+      }
+      canvas.addEventListener("click", (e) => {
+        if (!e.target.closest(".card,#toolbar,#sidebar")) {
+          selectCard(null);
+          closePopup();
+        }
+      });
+
+      function addCard(x, y) {
+        snapshot();
+        const b = getBoard();
+        if (!b) return;
+        const card = {
+          id: uid(),
+          title: "New note",
+          note: "",
+          x,
+          y,
+          w: DEFAULT_W,
+          h: DEFAULT_H,
+          urgency: "none",
+          done: false,
+        };
+        b.cards.push(card);
+        save();
+        const el = createCardEl(card);
+        renderEdges();
+        setTimeout(() => {
+          selectCard(card.id);
+          const t = el.querySelector(".card-title");
+          t.setAttribute("contenteditable", "true");
+          t.classList.add("editing");
+          t.focus();
+          selAll(t);
+        }, 40);
+      }
+
+      // ── PALETTE ───────────────────────────────────────────────────────────────────
+      function showPalette(anchor, cardId) {
+        closePopup();
+        const popup = document.createElement("div");
+        popup.className = "palette-popup";
+        const b = getBoard();
+        const card = b?.cards.find((c) => c.id === cardId);
+        URGENCY.forEach((u) => {
+          const btn = document.createElement("button");
+          btn.className =
+            "palette-option" + (card?.urgency === u.id ? " active" : "");
+          btn.style.borderLeftColor =
+            u.id === "none" ? "transparent" : u.colour;
+          btn.innerHTML = `<span class="palette-swatch" style="background:${u.swatch}"></span>${u.label}`;
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            snapshot();
+            const b = getBoard();
+            const c = b?.cards.find((c) => c.id === cardId);
+            if (c) {
+              c.urgency = u.id;
+              save();
+              syncCard(c);
+            }
+            closePopup();
+          });
+          popup.appendChild(btn);
+        });
+        document.body.appendChild(popup);
+        activePopup = popup;
+        const r = anchor.getBoundingClientRect();
+        popup.style.left = r.left - 10 + "px";
+        popup.style.top = r.bottom + 6 + "px";
+        setTimeout(() => window.addEventListener("click", closeOutside), 0);
+      }
+      function closeOutside(e) {
+        if (!activePopup?.contains(e.target)) closePopup();
+      }
+      function closePopup() {
+        activePopup?.remove();
+        activePopup = null;
+        window.removeEventListener("click", closeOutside);
+      }
+
+      // ── BOARDS ────────────────────────────────────────────────────────────────────
+      function renderBoardList() {
+        const list = document.getElementById("board-list");
+        list.innerHTML = "";
+        boards.forEach((b) => {
+          const el = document.createElement("button");
+          el.className =
+            "board-item" + (b.id === activeBoardId ? " active" : "");
+          el.innerHTML = `
+      <span class="board-drag-handle" title="Drag to reorder">
+        <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+          <circle cx="2" cy="2" r="1.5"/><circle cx="6" cy="2" r="1.5"/>
+          <circle cx="2" cy="6" r="1.5"/><circle cx="6" cy="6" r="1.5"/>
+          <circle cx="2" cy="10" r="1.5"/><circle cx="6" cy="10" r="1.5"/>
+        </svg>
+      </span>
+      <span class="board-item-dot"></span>
+      <span class="board-item-name">${esc(b.name)}</span>
+      <button class="board-item-dup" title="Duplicate board">⧉</button>
+      <button class="board-item-del" title="Delete board">✕</button>`;
+
+          const nameEl = el.querySelector(".board-item-name");
+          const dragHandle = el.querySelector(".board-drag-handle");
+          dragHandle.addEventListener("click", (e) => e.stopPropagation());
+          dragHandle.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const listEl = document.getElementById("board-list");
+            const items = [...listEl.querySelectorAll(".board-item")];
+            const fromIdx = boards.findIndex((x) => x.id === b.id);
+            let dropIdx = fromIdx;
+            el.style.opacity = "0.5";
+            const onMove = (ev) => {
+              items.forEach((item) =>
+                item.classList.remove("drop-above", "drop-below"),
+              );
+              for (let i = 0; i < items.length; i++) {
+                const r = items[i].getBoundingClientRect();
+                if (ev.clientY >= r.top && ev.clientY <= r.bottom) {
+                  const mid = r.top + r.height / 2;
+                  if (ev.clientY < mid) {
+                    items[i].classList.add("drop-above");
+                    dropIdx = i;
+                  } else {
+                    items[i].classList.add("drop-below");
+                    dropIdx = i + 1;
+                  }
+                  break;
+                }
+              }
+            };
+            const onUp = () => {
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+              el.style.opacity = "";
+              items.forEach((item) =>
+                item.classList.remove("drop-above", "drop-below"),
+              );
+              if (dropIdx !== fromIdx && dropIdx !== fromIdx + 1) {
+                const [board] = boards.splice(fromIdx, 1);
+                const insertAt = dropIdx > fromIdx ? dropIdx - 1 : dropIdx;
+                boards.splice(insertAt, 0, board);
+                save();
+                renderBoardList();
+              }
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+          });
+
+          let clickTimer = null;
+
+          el.addEventListener("click", (e) => {
+            if (e.target.closest(".board-item-rename")) return;
+            if (e.target.closest(".board-item-del")) {
+              e.stopPropagation();
+              if (boards.length === 1) return;
+              if (!confirm(`Delete "${b.name}"?`)) return;
+              boards = boards.filter((x) => x.id !== b.id);
+              if (activeBoardId === b.id) activeBoardId = boards[0].id;
+              save();
+              initHistory();
+              fullRebuild();
+              renderEdges();
+              return;
+            }
+            if (e.target.closest(".board-item-dup")) {
+              e.stopPropagation();
+              duplicateBoard(b.id);
+              return;
+            }
+            // Delay switch so double-click can intercept
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+              activeBoardId = b.id;
+              save();
+              initHistory();
+              fullRebuild();
+              renderEdges();
+              closeSidebar();
+            }, 220);
+          });
+
+          el.addEventListener("dblclick", (e) => {
+            if (!e.target.closest(".board-item-name")) return;
+            e.stopPropagation();
+            clearTimeout(clickTimer); // cancel the single-click switch
+            const input = document.createElement("input");
+            input.className = "board-item-rename";
+            input.value = b.name;
+            nameEl.replaceWith(input);
+            input.focus();
+            input.select();
+            const commit = () => {
+              const v = input.value.trim();
+              if (v) b.name = v;
+              save();
+              renderBoardList();
+              document.getElementById("board-name-display").textContent =
+                getBoard()?.name || "";
+            };
+            input.addEventListener("blur", commit);
+            input.addEventListener("keydown", (ev) => {
+              if (ev.key === "Enter") {
+                ev.preventDefault();
+                input.blur();
+              }
+              if (ev.key === "Escape") {
+                input.value = b.name;
+                input.blur();
+              }
+              ev.stopPropagation();
+            });
+          });
+          list.appendChild(el);
+        });
+      }
+
+      function duplicateBoard(boardId) {
+        const src = boards.find((b) => b.id === boardId);
+        if (!src) return;
+        // Deep clone with new IDs — remap card IDs in edges too
+        const idMap = {};
+        const newCards = src.cards.map((c) => {
+          const newId = uid();
+          idMap[c.id] = newId;
+          return { ...JSON.parse(JSON.stringify(c)), id: newId };
+        });
+        const newEdges = src.edges.map((ed) => ({
+          from: idMap[ed.from] || ed.from,
+          to: idMap[ed.to] || ed.to,
+        }));
+        const newBoard = {
+          id: uid(),
+          name: src.name + " (copy)",
+          cards: newCards,
+          edges: newEdges,
+        };
+        // Insert right after the source board
+        const idx = boards.findIndex((b) => b.id === boardId);
+        boards.splice(idx + 1, 0, newBoard);
+        activeBoardId = newBoard.id;
+        save();
+        initHistory();
+        fullRebuild();
+        renderEdges();
+        renderBoardList();
+      }
+      document
+        .getElementById("new-board-input")
+        .addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          const name = e.target.value.trim();
+          if (!name) return;
+          const id = uid();
+          boards.push({ id, name, cards: [], edges: [] });
+          activeBoardId = id;
+          e.target.value = "";
+          save();
+          initHistory();
+          fullRebuild();
+          renderEdges();
+          closeSidebar();
+        });
+
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("backdrop");
+      function openSidebar() {
+        sidebar.classList.add("open");
+        backdrop.classList.add("active");
+      }
+      function closeSidebar() {
+        sidebar.classList.remove("open");
+        backdrop.classList.remove("active");
+      }
+      backdrop.addEventListener("click", closeSidebar);
+
+      // ── FIT VIEW ──────────────────────────────────────────────────────────────────
+      function fitView() {
+        const b = getBoard();
+        if (!b || !b.cards.length) {
+          viewport = { x: 0, y: 0, scale: 1 };
+          setViewport();
+          return;
+        }
+        const pad = 80;
+        const minX = Math.min(...b.cards.map((c) => c.x)) - pad;
+        const minY = Math.min(...b.cards.map((c) => c.y)) - pad;
+        const maxX =
+          Math.max(...b.cards.map((c) => c.x + (c.w || DEFAULT_W))) + pad;
+        const maxY =
+          Math.max(...b.cards.map((c) => c.y + (c.h || DEFAULT_H))) + pad;
+        const W = window.innerWidth,
+          H = window.innerHeight;
+        const s = Math.min(W / (maxX - minX), H / (maxY - minY), 1.5) * 0.92;
+        viewport.scale = Math.max(s, 0.15);
+        viewport.x =
+          (W - (maxX - minX) * viewport.scale) / 2 - minX * viewport.scale;
+        viewport.y =
+          (H - (maxY - minY) * viewport.scale) / 2 - minY * viewport.scale;
+        setViewport();
+      }
+
+      // ── PRINT ─────────────────────────────────────────────────────────────────────
+      // Strategy: inject a <style> that repositions #world to top-left at scale:1,
+      // sizes the page exactly to fit the content, then remove it after printing.
+      const printOverlay = document.getElementById("print-overlay");
+      function openPrint() {
+        printOverlay.classList.add("active");
+      }
+      function closePrint() {
+        printOverlay.classList.remove("active");
+      }
+
+      document
+        .getElementById("btn-print-go")
+        .addEventListener("click", async () => {
+          const b = getBoard();
+          if (!b || !b.cards.length) {
+            closePrint();
+            return;
+          }
+
+          document.getElementById("export-progress").style.display = "block";
+          document.getElementById("btn-print-go").style.display = "none";
+
+          // Calculate tight bounding box
+          const pad = 60;
+          const minX = Math.min(...b.cards.map((c) => c.x)) - pad;
+          const minY = Math.min(...b.cards.map((c) => c.y)) - pad;
+          const maxX =
+            Math.max(...b.cards.map((c) => c.x + (c.w || DEFAULT_W))) + pad;
+          const maxY =
+            Math.max(...b.cards.map((c) => c.y + (c.h || DEFAULT_H))) + pad;
+          const contentW = maxX - minX,
+            contentH = maxY - minY;
+
+          // Hide UI chrome
+          const hide = [
+            "#toolbar",
+            "#sidebar",
+            "#backdrop",
+            "#board-name-display",
+            "#hint",
+            "#print-overlay",
+            ".resize-handle",
+            ".connect-handle",
+            ".card-actions",
+          ];
+          const hidden = [];
+          hide.forEach((sel) => {
+            document.querySelectorAll(sel).forEach((el) => {
+              if (el.style.display !== "none") {
+                el.style.display = "none";
+                hidden.push(el);
+              }
+            });
+          });
+
+          // Temporarily reposition world so content starts at (0,0)
+          const prevTransform = world.style.transform;
+          world.style.transform = `translate(${-minX}px,${-minY}px) scale(1)`;
+
+          // Resize canvas element to match content
+          const prevW = canvas.style.width,
+            prevH = canvas.style.height;
+          const prevOvf = canvas.style.overflow;
+          canvas.style.width = contentW + "px";
+          canvas.style.height = contentH + "px";
+          canvas.style.overflow = "visible";
+
+          await new Promise((r) => setTimeout(r, 80));
+
+          try {
+            const cvs = await html2canvas(canvas, {
+              width: contentW,
+              height: contentH,
+              x: 0,
+              y: 0,
+              scale: 2,
+              useCORS: true,
+              backgroundColor:
+                getComputedStyle(document.documentElement)
+                  .getPropertyValue("--canvas-bg")
+                  .trim() || "#F2EDE3",
+              logging: false,
+              removeContainer: true,
+              onclone: (clonedDoc) => {
+                clonedDoc.querySelectorAll(".card").forEach((clonedCard) => {
+                  const origCard = document.querySelector(
+                    `.card[data-id="${clonedCard.dataset.id}"]`,
+                  );
+                  if (!origCard) return;
+                  // html2canvas can't render textarea content correctly —
+                  // replace with a styled div containing the live value
+                  const origNote = origCard.querySelector(".card-note");
+                  const clonedNote = clonedCard.querySelector(".card-note");
+                  if (origNote && clonedNote) {
+                    const cs = window.getComputedStyle(origNote);
+                    const div = clonedDoc.createElement("div");
+                    div.style.width = "100%";
+                    div.style.height = "100%";
+                    div.style.fontFamily = cs.fontFamily;
+                    div.style.fontSize = cs.fontSize;
+                    div.style.fontStyle = cs.fontStyle;
+                    div.style.fontWeight = cs.fontWeight;
+                    div.style.color = cs.color;
+                    div.style.lineHeight = cs.lineHeight;
+                    div.style.letterSpacing = cs.letterSpacing;
+                    div.style.textTransform = cs.textTransform;
+                    div.style.whiteSpace = "pre-wrap";
+                    div.style.wordBreak = "break-word";
+                    div.style.background = "transparent";
+                    div.style.padding = "0";
+                    div.style.overflow = "hidden";
+                    div.textContent = origNote.value;
+                    clonedNote.replaceWith(div);
+                  }
+                  // Allow title to wrap fully in export (not truncated)
+                  const clonedTitle = clonedCard.querySelector(".card-title");
+                  if (clonedTitle) {
+                    clonedTitle.style.whiteSpace = "normal";
+                    clonedTitle.style.overflow = "visible";
+                    clonedTitle.style.textOverflow = "unset";
+                  }
+                });
+              },
+            });
+            const link = document.createElement("a");
+            link.download =
+              (b.name || "inkmap").replace(/[^a-z0-9_\-]/gi, "_") + ".png";
+            link.href = cvs.toDataURL("image/png");
+            link.click();
+          } catch (err) {
+            alert("Export failed: " + err.message);
+          }
+
+          // Restore everything
+          world.style.transform = prevTransform;
+          canvas.style.width = prevW;
+          canvas.style.height = prevH;
+          canvas.style.overflow = prevOvf;
+          hidden.forEach((el) => (el.style.display = ""));
+          document.getElementById("export-progress").style.display = "none";
+          document.getElementById("btn-print-go").style.display = "";
+          closePrint();
+        });
+
+      document
+        .getElementById("btn-print-cancel")
+        .addEventListener("click", closePrint);
+      printOverlay.addEventListener("click", (e) => {
+        if (e.target === printOverlay) closePrint();
+      });
+
+      // ── KEYBOARD ──────────────────────────────────────────────────────────────────
+      window.addEventListener("keydown", (e) => {
+        const tag = e.target.tagName.toLowerCase();
+        const editing =
+          tag === "input" || tag === "textarea" || e.target.isContentEditable;
+        // Undo/redo always fire regardless of focus
+        if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          (e.key === "y" || (e.key === "z" && e.shiftKey))
+        ) {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (editing) return;
+        if (e.key === "Escape") {
+          selectCard(null);
+          closePopup();
+          closePrint();
+          closeAuthPanel();
+        }
+        if (e.key === "f" || e.key === "F") fitView();
+        if (e.key === "b" || e.key === "B") openSidebar();
+        if (e.key === "t" || e.key === "T") {
+          darkMode = !darkMode;
+          applyDarkMode();
+          save();
+        }
+        if (e.key === "p" || e.key === "P") openPrint();
+        if (e.key === "n" || e.key === "N") {
+          const cx = (window.innerWidth / 2 - viewport.x) / viewport.scale;
+          const cy = (window.innerHeight / 2 - viewport.y) / viewport.scale;
+          addCard(cx - DEFAULT_W / 2, cy - DEFAULT_H / 2);
+        }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          const sel = world.querySelector(".card.selected");
+          if (!sel) return;
+          snapshot();
+          const id = sel.dataset.id;
+          const b = getBoard();
+          b.cards = b.cards.filter((c) => c.id !== id);
+          b.edges = b.edges.filter((ed) => ed.from !== id && ed.to !== id);
+          save();
+          sel.remove();
+          renderEdges();
+        }
+      });
+
+      // ── AUTH EVENT LISTENERS ─────────────────────────────────────────────────
+      document.getElementById("btn-auth").addEventListener("click", () => {
+        if (currentUser) {
+          if (confirm("Sign out? You can keep working offline.")) doSignOut();
+        } else {
+          openAuthPanel();
+        }
+      });
+      document
+        .getElementById("btn-auth-signin")
+        .addEventListener("click", () => attemptAuth(false));
+      document
+        .getElementById("btn-auth-signup")
+        .addEventListener("click", () => attemptAuth(true));
+      document
+        .getElementById("btn-auth-cancel")
+        .addEventListener("click", closeAuthPanel);
+      document.getElementById("auth-overlay").addEventListener("click", (e) => {
+        if (e.target === document.getElementById("auth-overlay"))
+          closeAuthPanel();
+      });
+      document.getElementById("auth-password").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") attemptAuth(false);
+        e.stopPropagation();
+      });
+      document
+        .getElementById("auth-email")
+        .addEventListener("keydown", (e) => e.stopPropagation());
+      document
+        .getElementById("btn-forgot")
+        .addEventListener("click", () => {
+          document.getElementById("auth-reset-email").value =
+            document.getElementById("auth-email").value;
+          document.getElementById("auth-reset-msg").textContent = "";
+          document.getElementById("btn-send-reset").disabled = false;
+          document.getElementById("btn-send-reset").textContent = "Send reset link";
+          showAuthView("reset");
+          setTimeout(() => document.getElementById("auth-reset-email").focus(), 50);
+        });
+      document
+        .getElementById("btn-back-signin")
+        .addEventListener("click", () => showAuthView("main"));
+      document
+        .getElementById("btn-send-reset")
+        .addEventListener("click", sendPasswordReset);
+      document
+        .getElementById("auth-reset-email")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") sendPasswordReset();
+          e.stopPropagation();
+        });
+      document
+        .getElementById("btn-set-newpass")
+        .addEventListener("click", setNewPassword);
+      document
+        .getElementById("auth-newpass")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter") setNewPassword();
+          e.stopPropagation();
+        });
+
+      document.getElementById("btn-dark").addEventListener("click", () => {
+        darkMode = !darkMode;
+        applyDarkMode();
+        save();
+      });
+      document
+        .getElementById("btn-boards")
+        .addEventListener("click", openSidebar);
+      document.getElementById("btn-undo").addEventListener("click", undo);
+      document.getElementById("btn-redo").addEventListener("click", redo);
+      document.getElementById("btn-fit").addEventListener("click", fitView);
+      document
+        .getElementById("btn-export")
+        .addEventListener("click", openPrint);
+      document.getElementById("btn-add").addEventListener("click", () => {
+        const cx = (window.innerWidth / 2 - viewport.x) / viewport.scale;
+        const cy = (window.innerHeight / 2 - viewport.y) / viewport.scale;
+        addCard(cx - DEFAULT_W / 2, cy - DEFAULT_H / 2);
+      });
+
+      // ── SAVE / LOAD JSON ─────────────────────────────────────────────────────────
+      document.getElementById("btn-save-json").addEventListener("click", () => {
+        const data = JSON.stringify(
+          { boards, activeBoardId, darkMode },
+          null,
+          2,
+        );
+        const blob = new Blob([data], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        const boardName = (getBoard()?.name || "inkmap").replace(
+          /[^a-z0-9_\-]/gi,
+          "_",
+        );
+        a.download =
+          "inkmap_" +
+          boardName +
+          "_" +
+          new Date().toISOString().slice(0, 10) +
+          ".json";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+
+      document.getElementById("btn-load-json").addEventListener("click", () => {
+        document.getElementById("file-input").click();
+      });
+
+      document.getElementById("file-input").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (!data.boards || !Array.isArray(data.boards))
+              throw new Error("Invalid file");
+            if (
+              !confirm(
+                `Load "${file.name}"? This will replace your current data.`,
+              )
+            )
+              return;
+            boards = data.boards;
+            activeBoardId = data.activeBoardId || data.boards[0]?.id;
+            if (data.darkMode !== undefined) {
+              darkMode = data.darkMode;
+              applyDarkMode();
+            }
+            if (!boards.find((b) => b.id === activeBoardId))
+              activeBoardId = boards[0]?.id;
+            save();
+            initHistory();
+            fullRebuild();
+            renderEdges();
+            setTimeout(() => {
+              const b = getBoard();
+              if (b?.cards.length) fitView();
+            }, 60);
+          } catch (err) {
+            alert("Could not load file: " + err.message);
+          }
+          e.target.value = ""; // reset so same file can be re-loaded
+        };
+        reader.readAsText(file);
+      });
+
+      // ── BOOT ──────────────────────────────────────────────────────────────────────
+      load();
+      applyDarkMode();
+      initHistory();
+      fullRebuild();
+      renderEdges();
+      setViewport();
+      updateAuthButton();
+
+      // Supabase auth state — fires immediately with INITIAL_SESSION if logged in
+      if (supa) {
+        supa.auth.onAuthStateChange(async (event, session) => {
+          if (event === "INITIAL_SESSION") {
+            if (session?.user) {
+              currentUser = session.user;
+              updateAuthButton();
+              // Restore session quietly: push local if no cloud row exists
+              const cloudData = await cloudPull();
+              if (!cloudData) await cloudPush();
+              else setSyncDot("saved");
+            }
+            return;
+          }
+          if (event === "SIGNED_IN" && session?.user) {
+            await onSignedIn(session.user);
+          }
+          if (event === "PASSWORD_RECOVERY") {
+            // User clicked the reset link in their email — show new password form
+            document.getElementById("auth-newpass").value = "";
+            document.getElementById("auth-newpass-msg").textContent = "";
+            document.getElementById("btn-set-newpass").disabled = false;
+            document.getElementById("btn-set-newpass").textContent = "Update password";
+            showAuthView("newpass");
+            document.getElementById("auth-overlay").classList.add("active");
+          }
+          if (event === "SIGNED_OUT") {
+            currentUser = null;
+            updateAuthButton();
+          }
+        });
+      }
+
+      setTimeout(() => {
+        const b = getBoard();
+        if (b?.cards.length) fitView();
+        else {
+          viewport = {
+            x: window.innerWidth / 2 - DEFAULT_W / 2,
+            y: window.innerHeight / 2 - DEFAULT_H / 2,
+            scale: 1,
+          };
+          setViewport();
+        }
+      }, 60);
+    </script>
+  </body>
+</html>
